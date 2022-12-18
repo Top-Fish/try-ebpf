@@ -1,17 +1,21 @@
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/cilium/ebpf/link"
+	"github.com/cilium/ebpf/perf"
 	"github.com/cilium/ebpf/rlimit"
 )
 
 // 不知道为啥，--必须的添加上，否则编译不过去
 // export BPF_CLANG=clang-14
 // export BPF_CFLAGS="-Wall -O2 -g -Werror"
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc $BPF_CLANG -cflags $BPF_CFLAGS bpf http.c -- -I../include
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc $BPF_CLANG -cflags $BPF_CFLAGS -type eventx bpf http.c -- -I../include
 
 type syscallHooks struct {
 	sysEnterAccept4 link.Link
@@ -44,50 +48,8 @@ func main() {
 	sysHook.installHooks(&objs)
 	defer sysHook.Close()
 
-	ticker := time.NewTicker(10 * time.Second)
-
-	mapKey := uint32(0)
-	for {
-		select {
-		case <-ticker.C:
-			{ // 数组类型MAP
-				var value uint64
-				if err := objs.AcceptCountArray.Lookup(mapKey, &value); err != nil {
-					fmt.Printf("objs.AcceptCountMap.Lookup :[%s]\n", err.Error())
-					continue
-				}
-				fmt.Printf("当前的引用次数为：%d\n", value)
-			}
-			{ // hash类型MAP
-				if false { //获取指定key的value
-					var key uint32 = 11381 //运行的http服务进程是11381
-					var value uint64
-					if err := objs.AcceptCountHash.Lookup(key, &value); err != nil {
-						fmt.Printf("objs.AcceptCountMap.Lookup :[%s]\n", err.Error())
-						continue
-					}
-					fmt.Printf("当前进程调用次数为：%d\n", value)
-				}
-				if true { //批量获取, 可用在未知key的情况下获取整个hash MAP
-					var (
-						nextkey      uint32
-						lookupKeys   = make([]uint32, 100)
-						lookupValues = make([]uint64, 100)
-					)
-					count, err := objs.AcceptCountHash.BatchLookup(nil, &nextkey, lookupKeys, lookupValues, nil)
-					if err != nil && count == 0 {
-						fmt.Printf("objs.AcceptCountHash.BatchLookup :[%s]\n", err.Error())
-						continue
-					}
-					fmt.Printf("当前的hash表的大小为：%d\n", count)
-					for i := 0; i < count; i++ {
-						fmt.Printf("HASH-MAP内容:  hash[%d]=%d\n", lookupKeys[i], lookupValues[i])
-					}
-				}
-			}
-
-		}
-	}
+	perfEvent(&objs)
+	// basicHash(&objs)
 }
 func (s *syscallHooks) installHooks(objs *bpfObjects) (err error) {
 	if sysCallDbg {
@@ -154,4 +116,77 @@ func (s *syscallHooks) Close() error {
 	s.sysExitAccept4.Close()
 	s.sysExitClose.Close()
 	return nil
+}
+
+func perfEvent(objs *bpfObjects) {
+	perfEventFd, err := perf.NewReader(objs.ReadEvents, os.Getpagesize())
+	if err != nil {
+		fmt.Printf("perfEvent()/perf.NewReader : %s\n", err.Error())
+		return
+	}
+	defer perfEventFd.Close()
+
+	var event bpfEventx
+	for {
+		record, err := perfEventFd.Read()
+		if err != nil {
+			continue
+		}
+
+		if err := binary.Read(bytes.NewBuffer(record.RawSample), binary.LittleEndian, &event); err != nil {
+			// fmt.Printf("perfEvent()/binary.Read : %s\n", err.Error())
+			continue
+		}
+		if event.Pid == 11381 {
+			fmt.Printf("pid=%d msg=%s\n", event.Pid, event.Buf)
+		}
+
+	}
+
+}
+
+func basicHash(objs *bpfObjects) {
+	ticker := time.NewTicker(10 * time.Second)
+	for {
+		select {
+		case <-ticker.C:
+			{ // 数组类型MAP
+				var value uint64
+				mapKey := uint32(0)
+				if err := objs.AcceptCountArray.Lookup(mapKey, &value); err != nil {
+					fmt.Printf("objs.AcceptCountMap.Lookup :[%s]\n", err.Error())
+					continue
+				}
+				fmt.Printf("当前的引用次数为：%d\n", value)
+			}
+			{ // hash类型MAP
+				if false { //获取指定key的value
+					var key uint32 = 11381 //运行的http服务进程是11381
+					var value uint64
+					if err := objs.AcceptCountHash.Lookup(key, &value); err != nil {
+						fmt.Printf("objs.AcceptCountMap.Lookup :[%s]\n", err.Error())
+						continue
+					}
+					fmt.Printf("当前进程调用次数为：%d\n", value)
+				}
+				if true { //批量获取, 可用在未知key的情况下获取整个hash MAP
+					var (
+						nextkey      uint32
+						lookupKeys   = make([]uint32, 100)
+						lookupValues = make([]uint64, 100)
+					)
+					count, err := objs.AcceptCountHash.BatchLookup(nil, &nextkey, lookupKeys, lookupValues, nil)
+					if err != nil && count == 0 {
+						fmt.Printf("objs.AcceptCountHash.BatchLookup :[%s]\n", err.Error())
+						continue
+					}
+					fmt.Printf("当前的hash表的大小为：%d\n", count)
+					for i := 0; i < count; i++ {
+						fmt.Printf("HASH-MAP内容:  hash[%d]=%d\n", lookupKeys[i], lookupValues[i])
+					}
+				}
+			}
+
+		}
+	}
 }

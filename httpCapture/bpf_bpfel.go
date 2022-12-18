@@ -13,6 +13,11 @@ import (
 	"github.com/cilium/ebpf"
 )
 
+type bpfEventx struct {
+	Pid uint32
+	Buf [256]uint8
+}
+
 // loadBpf returns the embedded CollectionSpec for bpf.
 func loadBpf() (*ebpf.CollectionSpec, error) {
 	reader := bytes.NewReader(_BpfBytes)
@@ -71,6 +76,7 @@ type bpfProgramSpecs struct {
 type bpfMapSpecs struct {
 	AcceptCountArray *ebpf.MapSpec `ebpf:"accept_count_array"`
 	AcceptCountHash  *ebpf.MapSpec `ebpf:"accept_count_hash"`
+	ReadEvents       *ebpf.MapSpec `ebpf:"read_events"`
 }
 
 // bpfObjects contains all objects after they have been loaded into the kernel.
@@ -94,12 +100,14 @@ func (o *bpfObjects) Close() error {
 type bpfMaps struct {
 	AcceptCountArray *ebpf.Map `ebpf:"accept_count_array"`
 	AcceptCountHash  *ebpf.Map `ebpf:"accept_count_hash"`
+	ReadEvents       *ebpf.Map `ebpf:"read_events"`
 }
 
 func (m *bpfMaps) Close() error {
 	return _BpfClose(
 		m.AcceptCountArray,
 		m.AcceptCountHash,
+		m.ReadEvents,
 	)
 }
 

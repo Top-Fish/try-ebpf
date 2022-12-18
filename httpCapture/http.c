@@ -43,11 +43,15 @@ int syscall_exit_accept4(struct sys_exit_accept4_ctx *ctx) {
 
 SEC("tracepoint/syscalls/sys_enter_read")
 int syscall_enter_read(struct sys_enter_read_ctx *ctx) {
-    
-    // __u64 pid = bpf_get_current_pid_tgid();
-    // if (ctx->buflen>0){
-    //     bpf_printk("[pid=%d]==> buf:%s,buflen:%d\n",pid,ctx->buf,ctx->buflen);
-    // }
+    struct eventx event;
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
+    event.pid  = pid_tgid >> 32;
+    u64 ret = bpf_probe_read(&event.buf,sizeof(event.buf),ctx->buf);
+    if(ret != 0){
+        bpf_printk("syscall_enter_read load buf failed !!!\n");
+        return 0;
+    }
+    bpf_perf_event_output(ctx,&read_events,BPF_F_CURRENT_CPU,&event,sizeof(event));
 
     return 0;
 }
