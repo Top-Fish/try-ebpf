@@ -1,53 +1,59 @@
 #include "common.h"
+#include "httpCapture.h"
 
 char __license[] SEC("license") = "Dual MIT/GPL";
 
-struct key {
-	u16 sport;
-	u16 dport;
-	u32 saddr;
-	u32 daddr;
-};
-
-// bpf_printk 会将内容输出到/sys/kernel/debug/tracing/trace_pipe
-
-struct sys_enter_accept4_ctx {
-	__u64 __unused_syscall_header;
-	__u32 __unused_syscall_nr;
-	
-	__u64 fd;
-	__u64* sockaddr;
-	__u64* addrlen;
-    __u64  flags;
-};
-struct sys_exit_accept4_ctx {
-	__u64 __unused_syscall_header;
-	__u32 __unused_syscall_nr;
-	
-	__u64 ret;
-};
-///sys/kernel/debug/tracing/events/syscalls/sys_enter_accept4/format 
 SEC("tracepoint/syscalls/sys_enter_accept4")
 int syscall_enter_accept4(struct sys_enter_accept4_ctx *ctx) {
     bpf_printk("enter sys_enter_accept4 !!!\n");
-    bpf_printk("您好,全世界 !!!\n"); // 不能输出中文
+
+    u64 initVal = 0, *valp;
+    u32 index = 0;  //数组类型MAP,需要使用下标
+    valp = bpf_map_lookup_elem(&accept_count_array,&index);
+    if(!valp){
+        bpf_map_update_elem(&accept_count_array,&index,&initVal,BPF_ANY);
+        return 0;
+    }
+    
+    __sync_fetch_and_add(valp,100);
     return 0;
 }
 
 SEC("tracepoint/syscalls/sys_exit_accept4")
 int syscall_exit_accept4(struct sys_exit_accept4_ctx *ctx) {
-    bpf_printk("exit sys_enter_accept4 !!!\n");
+    bpf_printk("enter sys_exit_accept4 !!!\n");
+
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
+    __u64 pid = pid_tgid >> 32;
+
+    u64 initVal = 0, *valp;
+    //hash类型MAP, 直接使用pid当做key
+    valp = bpf_map_lookup_elem(&accept_count_hash,&pid);
+    if(!valp){
+        bpf_map_update_elem(&accept_count_hash,&pid,&initVal,BPF_ANY);
+        bpf_printk("===>  pid=%d, count=%d\n", pid, *valp);
+        return 0;
+    }
+    bpf_printk("===>  pid=%d, count=%d\n", pid, *valp);
+    __sync_fetch_and_add(valp,1);
+ 
+    bpf_printk("exit sys_exit_accept4 !!!\n");
     return 0;
 }
 
 SEC("tracepoint/syscalls/sys_enter_read")
-int syscall_enter_read(struct pt_regs *ctx) {
-    bpf_printk("进入read函数\n");
+int syscall_enter_read(struct sys_enter_read_ctx *ctx) {
+    
+    // __u64 pid = bpf_get_current_pid_tgid();
+    // if (ctx->buflen>0){
+    //     bpf_printk("[pid=%d]==> buf:%s,buflen:%d\n",pid,ctx->buf,ctx->buflen);
+    // }
+
     return 0;
 }
 
 SEC("tracepoint/syscalls/sys_exit_read")
-int syscall_exit_read(struct pt_regs *ctx) {
+int syscall_exit_read(struct sys_exit_read_ctx *ctx) {
     bpf_printk("退出read函数\n");
     return 0;
 }

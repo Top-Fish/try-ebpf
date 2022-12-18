@@ -43,9 +43,50 @@ func main() {
 	sysHook := syscallHooks{}
 	sysHook.installHooks(&objs)
 	defer sysHook.Close()
+
+	ticker := time.NewTicker(10 * time.Second)
+
+	mapKey := uint32(0)
 	for {
-		fmt.Printf("----------------------\n")
-		time.Sleep(10 * time.Second)
+		select {
+		case <-ticker.C:
+			{ // 数组类型MAP
+				var value uint64
+				if err := objs.AcceptCountArray.Lookup(mapKey, &value); err != nil {
+					fmt.Printf("objs.AcceptCountMap.Lookup :[%s]\n", err.Error())
+					continue
+				}
+				fmt.Printf("当前的引用次数为：%d\n", value)
+			}
+			{ // hash类型MAP
+				if false { //获取指定key的value
+					var key uint32 = 11381 //运行的http服务进程是11381
+					var value uint64
+					if err := objs.AcceptCountHash.Lookup(key, &value); err != nil {
+						fmt.Printf("objs.AcceptCountMap.Lookup :[%s]\n", err.Error())
+						continue
+					}
+					fmt.Printf("当前进程调用次数为：%d\n", value)
+				}
+				if true { //批量获取, 可用在未知key的情况下获取整个hash MAP
+					var (
+						nextkey      uint32
+						lookupKeys   = make([]uint32, 100)
+						lookupValues = make([]uint64, 100)
+					)
+					count, err := objs.AcceptCountHash.BatchLookup(nil, &nextkey, lookupKeys, lookupValues, nil)
+					if err != nil && count == 0 {
+						fmt.Printf("objs.AcceptCountHash.BatchLookup :[%s]\n", err.Error())
+						continue
+					}
+					fmt.Printf("当前的hash表的大小为：%d\n", count)
+					for i := 0; i < count; i++ {
+						fmt.Printf("HASH-MAP内容:  hash[%d]=%d\n", lookupKeys[i], lookupValues[i])
+					}
+				}
+			}
+
+		}
 	}
 }
 func (s *syscallHooks) installHooks(objs *bpfObjects) (err error) {
@@ -57,7 +98,6 @@ func (s *syscallHooks) installHooks(objs *bpfObjects) (err error) {
 		}
 
 	}
-
 	s.sysEnterAccept4, err = link.Tracepoint("syscalls", "sys_enter_accept4", objs.SyscallEnterAccept4, nil)
 	if err != nil {
 		fmt.Printf("tracepoint sys_enter_accept4: %s\n", err.Error())

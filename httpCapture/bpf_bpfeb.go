@@ -69,6 +69,8 @@ type bpfProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type bpfMapSpecs struct {
+	AcceptCountArray *ebpf.MapSpec `ebpf:"accept_count_array"`
+	AcceptCountHash  *ebpf.MapSpec `ebpf:"accept_count_hash"`
 }
 
 // bpfObjects contains all objects after they have been loaded into the kernel.
@@ -90,10 +92,15 @@ func (o *bpfObjects) Close() error {
 //
 // It can be passed to loadBpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type bpfMaps struct {
+	AcceptCountArray *ebpf.Map `ebpf:"accept_count_array"`
+	AcceptCountHash  *ebpf.Map `ebpf:"accept_count_hash"`
 }
 
 func (m *bpfMaps) Close() error {
-	return _BpfClose()
+	return _BpfClose(
+		m.AcceptCountArray,
+		m.AcceptCountHash,
+	)
 }
 
 // bpfPrograms contains all programs after they have been loaded into the kernel.

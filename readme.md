@@ -107,6 +107,23 @@ tracepoint:syscalls:sys_exit_close_range
 > 每一个函数下都有一个对应的format文件，里面记录了这个hook的参数信息
 > 每个函数下还有个enable的开关文件,这个只是内核里的调试信息，不影响我们编写的log信息
 
+### sys_enter_read：
+> cat /sys/kernel/debug/tracing/events/syscalls/sys_enter_read/format 
+```
+#cat /sys/kernel/debug/tracing/events/syscalls/sys_enter_read/format 
+name: sys_enter_read
+ID: 691
+format:
+        field:unsigned short common_type;       offset:0;       size:2; signed:0;
+        field:unsigned char common_flags;       offset:2;       size:1; signed:0;
+        field:unsigned char common_preempt_count;       offset:3;       size:1; signed:0;
+        field:int common_pid;   offset:4;       size:4; signed:1;
+
+        field:int __syscall_nr; offset:8;       size:4; signed:1;
+        field:unsigned int fd;  offset:16;      size:8; signed:0;
+        field:char * buf;       offset:24;      size:8; signed:0;
+        field:size_t count;     offset:32;      size:8; signed:0;
+```
 
 ## 4. 编译.c文件
 `//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc $BPF_CLANG -cflags $BPF_CFLAGS bpf http.c -- -I../include`
