@@ -127,5 +127,8 @@ format:
 
 ## 4. 编译.c文件
 `//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc $BPF_CLANG -cflags $BPF_CFLAGS bpf http.c -- -I../include`
+使用makefile编译，方便传递各种参数,详见makefile
 
-使用makefile编译，方便传递各种参数
+## 5. 测试MAP结构
+- hash map
+- array map
