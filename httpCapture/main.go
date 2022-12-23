@@ -15,7 +15,7 @@ import (
 // 不知道为啥，--必须的添加上，否则编译不过去
 // export BPF_CLANG=clang-14
 // export BPF_CFLAGS="-Wall -O2 -g -Werror"
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc $BPF_CLANG -cflags $BPF_CFLAGS -type eventx bpf http.c -- -I../include
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc $BPF_CLANG -cflags $BPF_CFLAGS -type eventx -type eventx_plus bpf httpCapture.c -- -I../include
 
 type syscallHooks struct {
 	sysEnterAccept4 link.Link
@@ -82,22 +82,22 @@ func (s *syscallHooks) installHooks(objs *bpfObjects) (err error) {
 	}
 	s.sysEnterWrite, err = link.Tracepoint("syscalls", "sys_enter_write", objs.SyscallEnterWrite, nil)
 	if err != nil {
-		fmt.Printf("tracepoint sys_enter_read: %s\n", err.Error())
+		fmt.Printf("tracepoint sys_enter_write: %s\n", err.Error())
 		return err
 	}
 	s.sysExitWrite, err = link.Tracepoint("syscalls", "sys_exit_write", objs.SyscallExitWrite, nil)
 	if err != nil {
-		fmt.Printf("tracepoint sys_exit_read: %s\n", err.Error())
+		fmt.Printf("tracepoint sys_exit_write: %s\n", err.Error())
 		return err
 	}
 	s.sysEnterClose, err = link.Tracepoint("syscalls", "sys_enter_close", objs.SyscallEnterClose, nil)
 	if err != nil {
-		fmt.Printf("tracepoint sys_enter_read: %s\n", err.Error())
+		fmt.Printf("tracepoint sys_enter_close: %s\n", err.Error())
 		return err
 	}
 	s.sysExitClose, err = link.Tracepoint("syscalls", "sys_exit_close", objs.SyscallExitClose, nil)
 	if err != nil {
-		fmt.Printf("tracepoint sys_exit_read: %s\n", err.Error())
+		fmt.Printf("tracepoint sys_exit_close: %s\n", err.Error())
 		return err
 	}
 	return nil
@@ -119,14 +119,16 @@ func (s *syscallHooks) Close() error {
 }
 
 func perfEvent(objs *bpfObjects) {
-	perfEventFd, err := perf.NewReader(objs.ReadEvents, os.Getpagesize())
+	perfEventFd, err := perf.NewReader(objs.PerfEvents, 10*os.Getpagesize()) //设置太小了无法读取数据!!!!!!!!
 	if err != nil {
 		fmt.Printf("perfEvent()/perf.NewReader : %s\n", err.Error())
 		return
 	}
 	defer perfEventFd.Close()
 
-	var event bpfEventx
+	// var event bpfEventx
+	var event bpfEventxPlus
+	var alreadyRead bool
 	for {
 		record, err := perfEventFd.Read()
 		if err != nil {
@@ -137,9 +139,21 @@ func perfEvent(objs *bpfObjects) {
 			// fmt.Printf("perfEvent()/binary.Read : %s\n", err.Error())
 			continue
 		}
-		if event.Pid == 11381 {
-			fmt.Printf("pid=%d msg=%s\n", event.Pid, event.Buf)
+		if alreadyRead && event.Option == 0 {
+			alreadyRead = false //不知道为何read系统调用总是执行两次,这里只是为了去除第二次read系统调用获取的消息
+			continue
+		} else if event.Option == 0 {
+			fmt.Printf("========================HTTP请求============================\n")
+		} else if event.Option == 1 {
+			fmt.Printf("========================HTTP响应============================\n")
+			alreadyRead = true
+		} else {
+			continue
 		}
+
+		fmt.Printf("程序名称:%s\n进程PID:%d\n", event.Cmd, event.Pid)
+		fmt.Printf("消息内容:\n%s\n", event.Buf)
+		fmt.Printf("============================================================\n\n\n")
 
 	}
 
